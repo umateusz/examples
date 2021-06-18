@@ -19,33 +19,49 @@
 #include "rclcpp/rclcpp.hpp"
 
 using AddTwoInts = example_interfaces::srv::AddTwoInts;
+using namespace std::chrono_literals;
+
+class ClientWithTimer : public rclcpp::Node
+{
+public:
+  ClientWithTimer() : Node("client_with_timer")
+  {
+    client_ = create_client<AddTwoInts>("add_two_ints");
+    while (!client_->wait_for_service(std::chrono::seconds(1))) {
+      if (!rclcpp::ok()) {
+        RCLCPP_ERROR(get_logger(), "client interrupted while waiting for service to appear.");
+        rclcpp::shutdown();
+        return;
+      }
+      RCLCPP_INFO(get_logger(), "waiting for service to appear...");
+    }
+    timer_ = create_wall_timer(500ms, std::bind(&ClientWithTimer::timer_callback, this));
+  }
+
+private:
+  void timer_callback()
+  {
+    RCLCPP_INFO(this->get_logger(), "Hello, world!");
+    auto request = std::make_shared<AddTwoInts::Request>();
+    request->a = 41;
+    request->b = 1;
+    auto result_future = client_->async_send_request(
+      request, [this, request](rclcpp::Client<AddTwoInts>::SharedFuture response) {
+        RCLCPP_INFO(this->get_logger(), "Hello from response handler!");
+        auto result = response.get();
+        RCLCPP_INFO(
+          get_logger(), "result of %" PRId64 " + %" PRId64 " = %" PRId64, request->a, request->b,
+          result->sum);
+      });
+  }
+  rclcpp::TimerBase::SharedPtr timer_;
+  rclcpp::Client<AddTwoInts>::SharedPtr client_;
+};
 
 int main(int argc, char * argv[])
 {
   rclcpp::init(argc, argv);
-  auto node = rclcpp::Node::make_shared("minimal_client");
-  auto client = node->create_client<AddTwoInts>("add_two_ints");
-  while (!client->wait_for_service(std::chrono::seconds(1))) {
-    if (!rclcpp::ok()) {
-      RCLCPP_ERROR(node->get_logger(), "client interrupted while waiting for service to appear.");
-      return 1;
-    }
-    RCLCPP_INFO(node->get_logger(), "waiting for service to appear...");
-  }
-  auto request = std::make_shared<AddTwoInts::Request>();
-  request->a = 41;
-  request->b = 1;
-  auto result_future = client->async_send_request(request);
-  if (rclcpp::spin_until_future_complete(node, result_future) !=
-    rclcpp::FutureReturnCode::SUCCESS)
-  {
-    RCLCPP_ERROR(node->get_logger(), "service call failed :(");
-    return 1;
-  }
-  auto result = result_future.get();
-  RCLCPP_INFO(
-    node->get_logger(), "result of %" PRId64 " + %" PRId64 " = %" PRId64,
-    request->a, request->b, result->sum);
+  rclcpp::spin(std::make_shared<ClientWithTimer>());
   rclcpp::shutdown();
   return 0;
 }

@@ -25,6 +25,7 @@ void handle_service(
   const std::shared_ptr<AddTwoInts::Request> request,
   const std::shared_ptr<AddTwoInts::Response> response)
 {
+  throw std::runtime_error("Some error in service");
   (void)request_header;
   RCLCPP_INFO(
     g_node->get_logger(),
